@@ -1,25 +1,43 @@
 name: Update SZSE Data
+
 on:
   schedule:
-    - cron: '0 2 * * 1-5' # 每周一到周五凌晨2点自动运行
-  workflow_dispatch: # 也允许手动点击运行
+    # 北京时间每周五凌晨 00:00 (对应 UTC 时间周四 16:00，所以是 0 16 * * 4)
+    - cron: '0 16 * * 4'
+  workflow_dispatch: # 保留手动触发按钮，方便测试
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # 【关键修复 1】解决 git push 报 403 无权限的问题
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      # 【关键修复 2】必须先拉取代码，否则后续无法 git push
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
       - name: Install dependencies
-        run: pip install playwright && playwright install chromium
+        run: |
+          python -m pip install --upgrade pip
+          # 如果你有 requirements.txt 就会自动安装，如果没有也不会报错
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
       - name: Run fetch script
         run: python fetch.py
+
       - name: Commit and push data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data.json
-          git commit -m "update szse data" || true
+          # 【优化】加了防错机制：只有当数据真的有变化时才提交，避免没有变化时报错
+          git diff --staged --quiet || git commit -m "Update SZSE data $(date +'%Y-%m-%d')"
           git push
